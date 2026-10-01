@@ -9,6 +9,7 @@ most ops are pure XML manipulation (no CLI needed).
 
 from __future__ import annotations
 
+import base64
 import re
 import time
 from pathlib import Path
@@ -109,7 +110,16 @@ def _set_layer_attr(svg_xml: str, layer_id: str, attr: str, value: str) -> str:
 
 async def inkscape_layers(
     operation: Literal[
-        "list", "get", "create", "rename", "hide", "show", "reorder", "lock", "unlock"
+        "list",
+        "get",
+        "create",
+        "rename",
+        "hide",
+        "show",
+        "reorder",
+        "lock",
+        "unlock",
+        "insert_image_layer",
     ],
     input_path: str = "",
     output_path: str = "",
@@ -117,6 +127,11 @@ async def inkscape_layers(
     label: str = "",
     new_label: str = "",
     position: int = 0,
+    image_path: str = "",
+    embed_mode: Literal["base64", "link"] = "base64",
+    opacity: float = 1.0,
+    fit: Literal["cover", "contain", "original"] = "cover",
+    z_index: Literal["bottom", "top"] = "bottom",
     _cli_wrapper: Any = None,
     _config: Any = None,
 ) -> dict[str, Any]:
@@ -305,6 +320,116 @@ async def inkscape_layers(
             dest = output_path or input_path
             _write_svg_xml(dest, new_svg)
             return ok("unlock", f"Unlocked layer '{layer_id}'", {"id": layer_id})
+
+        elif operation == "insert_image_layer":
+            if not image_path:
+                return fail("insert_image_layer", "image_path is required", "ValueError")
+            img_p = Path(image_path)
+            if not img_p.exists():
+                return fail(
+                    "insert_image_layer",
+                    f"Image file not found: {image_path}",
+                    "FileNotFoundError",
+                )
+
+            lid = layer_id or _next_layer_id(svg)
+            lbl = label or img_p.stem.replace("_", " ").title()
+
+            # Inspect SVG dimensions from viewBox or width/height attributes
+            w_match = re.search(r'\bwidth\s*=\s*["\']([\d.]+)', svg)
+            h_match = re.search(r'\bheight\s*=\s*["\']([\d.]+)', svg)
+            vb_match = re.search(
+                r'\bviewBox\s*=\s*["\'][\d.]+\s+[\d.]+\s+([\d.]+)\s+([\d.]+)', svg
+            )
+
+            svg_w = (
+                float(vb_match.group(1))
+                if vb_match
+                else (float(w_match.group(1)) if w_match else 800.0)
+            )
+            svg_h = (
+                float(vb_match.group(2))
+                if vb_match
+                else (float(h_match.group(1)) if h_match else 600.0)
+            )
+
+            # Build href
+            if embed_mode == "base64":
+                ext = img_p.suffix.lower().lstrip(".")
+                mime = f"image/{'jpeg' if ext in ('jpg', 'jpeg') else ext}"
+                b64_str = base64.b64encode(img_p.read_bytes()).decode("ascii")
+                href = f"data:{mime};base64,{b64_str}"
+            else:
+                href = str(img_p)
+
+            clamped_opacity = max(0.0, min(float(opacity), 1.0))
+            opacity_attr = (
+                f' opacity="{clamped_opacity}"' if clamped_opacity < 1.0 else ""
+            )
+
+            if fit == "cover":
+                aspect = "xMidYMid slice"
+            elif fit == "contain":
+                aspect = "xMidYMid meet"
+            else:
+                aspect = "none"
+
+            img_elem = (
+                f'<image\n'
+                f'       id="{lid}_img"\n'
+                f'       x="0"\n'
+                f'       y="0"\n'
+                f'       width="{svg_w}"\n'
+                f'       height="{svg_h}"\n'
+                f'       preserveAspectRatio="{aspect}"\n'
+                f'       xlink:href="{href}"{opacity_attr}/>'
+            )
+
+            layer_block = (
+                f'  <g\n'
+                f'     inkscape:groupmode="layer"\n'
+                f'     id="{lid}"\n'
+                f'     inkscape:label="{lbl}">\n'
+                f'    {img_elem}\n'
+                f'  </g>'
+            )
+
+            # Insert layer at bottom (underlay) or top of layer stack
+            if z_index == "bottom":
+                defs_end = svg.find("</defs>")
+                if defs_end != -1:
+                    insert_pos = defs_end + len("</defs>")
+                    new_svg = svg[:insert_pos] + f"\n{layer_block}" + svg[insert_pos:]
+                else:
+                    svg_tag_end = svg.find(">")
+                    if svg_tag_end != -1:
+                        insert_pos = svg_tag_end + 1
+                        new_svg = (
+                            svg[:insert_pos] + f"\n{layer_block}" + svg[insert_pos:]
+                        )
+                    else:
+                        new_svg = svg + f"\n{layer_block}"
+            else:
+                if "</svg>" in svg:
+                    new_svg = svg.replace("</svg>", f"{layer_block}\n</svg>")
+                else:
+                    new_svg = svg + f"\n{layer_block}"
+
+            dest = output_path or input_path
+            _write_svg_xml(dest, new_svg)
+            return ok(
+                "insert_image_layer",
+                f"Inserted image layer '{lbl}' ({lid}) into {dest}",
+                {
+                    "layer_id": lid,
+                    "label": lbl,
+                    "embed_mode": embed_mode,
+                    "z_index": z_index,
+                    "opacity": clamped_opacity,
+                    "fit": fit,
+                    "path": dest,
+                },
+            )
 
         else:
             return fail(operation, f"Unknown operation: {operation}", "ValueError")

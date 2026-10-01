@@ -225,21 +225,20 @@ class InkscapeCliWrapper:
         # Use --batch-process for headless operation (prevents GUI flashes)
         cmd_args.append("--batch-process")
 
-        # Construct the actions string
-        actions_str = ";".join(actions)
+        # If an output path is specified and not already in actions, configure export
+        actions_list = list(actions)
+        if output_path and not any("export-filename" in a for a in actions_list):
+            resolved_out = str(Path(output_path).resolve())
+            cmd_args.append(f"--export-filename={resolved_out}")
+            if "export-do" not in actions_list:
+                actions_list.append("export-do")
 
         # Add input file
         cmd_args.append(str(Path(input_path).resolve()))
 
         # Add the actions flag
+        actions_str = ";".join(actions_list)
         cmd_args.append(f"--actions={actions_str}")
-
-        # If an output path is specified, add an export action to the chain
-        if output_path:
-            cmd_args.append(f"--export-filename={str(Path(output_path).resolve())}")
-            # Ensure an export action is part of the chain if output_path is given
-            if "export-do" not in actions_str:
-                cmd_args[-1] += ";export-do"  # Append export-do if not already present
 
         return await self._execute_command(cmd_args, timeout)
 

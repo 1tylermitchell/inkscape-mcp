@@ -623,21 +623,31 @@ class InkscapeMCPServer:
             label: str = "",
             new_label: str = "",
             position: int = 0,
+            image_path: str = "",
+            embed_mode: Literal["base64", "link"] = "base64",
+            opacity: float = 1.0,
+            fit: Literal["cover", "contain", "original"] = "cover",
+            z_index: Literal["bottom", "top"] = "bottom",
         ) -> dict[str, Any]:
-            """INKSCAPE_LAYERS - Layer management: list, create, rename, hide/show, lock/unlock, reorder.
+            """INKSCAPE_LAYERS - Layer management: list, create, rename, hide/show, lock/unlock, reorder, insert_image_layer.
 
-            PORTMANTEAU RATIONALE: Layer bookkeeping is one discoverable tool instead of nine.
+            PORTMANTEAU RATIONALE: Layer bookkeeping is one discoverable tool instead of ten.
 
-            Operations: list, get, create, rename, hide, show, reorder, lock, unlock.
+            Operations: list, get, create, rename, hide, show, reorder, lock, unlock, insert_image_layer.
 
             Args:
                 operation: Subcommand; must match InkscapeLayerOperation.
                 input_path: SVG document to read/modify.
                 output_path: Destination for the modified SVG (defaults to input_path when empty).
-                layer_id: Target layer for get/rename/hide/show/reorder/lock/unlock.
-                label: Layer label for create.
+                layer_id: Target layer for get/rename/hide/show/reorder/lock/unlock/insert_image_layer.
+                label: Layer label for create / insert_image_layer.
                 new_label: Replacement label for rename.
                 position: Target index for reorder.
+                image_path: Path to raster image (PNG, JPG, WebP) for insert_image_layer.
+                embed_mode: "base64" (self-contained) or "link" (file reference).
+                opacity: Layer opacity (0.0 to 1.0).
+                fit: "cover", "contain", or "original" for image aspect ratio sizing.
+                z_index: "bottom" (underlay) or "top" (overlay) in the document layer stack.
 
             Returns:
                 Dict with success, operation, message, data (layers list or affected layer), error.
@@ -653,6 +663,11 @@ class InkscapeMCPServer:
                 label=label,
                 new_label=new_label,
                 position=position,
+                image_path=image_path,
+                embed_mode=embed_mode,
+                opacity=opacity,
+                fit=fit,
+                z_index=z_index,
             )
 
         @self.mcp.tool(

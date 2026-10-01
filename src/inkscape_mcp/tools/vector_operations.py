@@ -1147,14 +1147,26 @@ async def _render_preview(
 ) -> dict[str, Any]:
     """Render PNG preview of SVG."""
     try:
-        actions = [f"export-filename:{output_path}", f"export-dpi:{dpi}", "export-do"]
+        resolved_out = str(Path(output_path).resolve())
+        actions = [f"export-filename:{resolved_out}", f"export-dpi:{dpi}", "export-do"]
 
         await cli_wrapper._execute_actions(
             input_path=input_path,
             actions=actions,
-            output_path=output_path,
+            output_path=resolved_out,
             timeout=config.process_timeout,
         )
+
+        out_path_obj = Path(resolved_out)
+        if not out_path_obj.exists() or out_path_obj.stat().st_size == 0:
+            return VectorOperationResult(
+                success=False,
+                operation="render_preview",
+                message=f"Preview rendering failed: output file was not created at {resolved_out}",
+                data={},
+                execution_time_ms=0,
+                error="ExportFailedError",
+            ).model_dump()
 
         return VectorOperationResult(
             success=True,
@@ -1162,11 +1174,11 @@ async def _render_preview(
             message=f"Rendered preview of {input_path}",
             data={
                 "input_path": input_path,
-                "output_path": output_path,
+                "output_path": resolved_out,
                 "dpi": dpi,
                 "format": "png",
             },
-            execution_time_ms=(time.time() - time.time()) * 1000,
+            execution_time_ms=0,
         ).model_dump()
 
     except Exception as e:

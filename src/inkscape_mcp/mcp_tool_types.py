@@ -141,6 +141,7 @@ InkscapeLayerOperation = Literal[
     "reorder",
     "lock",
     "unlock",
+    "insert_image_layer",
 ]
 
 InkscapeAnimationOperation = Literal[
